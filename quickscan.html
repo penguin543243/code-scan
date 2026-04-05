@@ -2,263 +2,142 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Serial Code 精準掃描器 v3</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Serial Code 快速掃描器 v2</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
-        :root {
-            --bg-color: #121212;
-            --card-bg: #1e1e1e;
-            --text-color: #e0e0e0;
-            --accent-color: #00e676;
-            --danger-color: #cf6679;
-            --primary-color: #3700b3;
-            --glass-bg: rgba(255, 255, 255, 0.05);
-            --glass-border: rgba(255, 255, 255, 0.1);
-        }
-
-        body { font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; overflow-x: hidden; }
-
-        h2 { font-weight: 800; margin-bottom: 25px; letter-spacing: -1px; background: linear-gradient(90deg, #00e676, #03dac6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-
-        /* 相機容器與高亮框 */
-        #camera-container { width: 100%; max-width: 500px; aspect-ratio: 4 / 3; position: relative; border-radius: 20px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.5); border: 1px solid var(--glass-border); }
-        #video { width: 100%; height: 100%; object-fit: cover; }
-        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; }
+        body { font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; background: #f4f4f9; color: #333; }
+        #video { width: 100%; max-width: 500px; border-radius: 15px; background: #000; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+        .controls { margin: 20px 0; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+        button { padding: 12px 20px; font-size: 16px; border: none; border-radius: 8px; cursor: pointer; transition: 0.2s; font-weight: bold; }
+        #scan-btn { background: #007bff; color: white; }
+        #clear-btn { background: #dc3545; color: white; }
+        button:active { transform: scale(0.95); }
+        button:disabled { background: #ccc; cursor: not-allowed; }
         
-        /* 半透明遮罩 */
-        .scrim { flex: 1; background: rgba(0, 0, 0, 0.6); }
+        #result-list { width: 100%; max-width: 500px; margin-top: 10px; }
+        .list-header { display: flex; justify-content: space-between; align-items: center; width: 100%; max-width: 500px; margin-bottom: 10px; }
+        .code-item { background: white; padding: 15px; margin-bottom: 10px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; animation: fadeIn 0.3s ease; }
+        .copy-btn { background: #28a745; color: white; font-size: 14px; padding: 8px 15px; }
         
-        /* 對焦框 (Highlight) */
-        #scan-region { width: 80%; height: 60px; border: 2px solid var(--accent-color); border-radius: 10px; margin: auto; position: relative; box-shadow: 0 0 15px rgba(0, 230, 118, 0.5); }
-        
-        /* 掃描線動畫 */
-        @keyframes scan { from { top: 0%; } to { top: 100%; } }
-        #scan-line { position: absolute; left: 0; width: 100%; height: 2px; background: var(--accent-color); display: none; box-shadow: 0 0 10px var(--accent-color); }
-        .scanning #scan-line { display: block; animation: scan 1s linear infinite; }
-
-        /* 控制按鈕區 */
-        .controls-panel { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 400px; background: var(--glass-bg); backdrop-filter: blur(10px); border-radius: 20px; border: 1px solid var(--glass-border); padding: 15px; display: flex; gap: 10px; justify-content: center; z-index: 100; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
-        button { padding: 12px 20px; font-size: 15px; border: none; border-radius: 12px; cursor: pointer; transition: 0.2s ease; font-weight: bold; flex: 1; text-align: center; }
-        
-        #scan-btn { background: var(--accent-color); color: #000; }
-        #scan-btn:active { background: #00c853; }
-        #clear-all-btn { background: var(--danger-color); color: white; flex: 0 0 60px; } /* 只顯示圖示 */
-
-        button:disabled { background: #555; color: #aaa; cursor: not-allowed; opacity: 0.7; }
-
-        /* 結果列表 */
-        #result-list { width: 100%; max-width: 500px; margin-top: 20px; padding-bottom: 100px; } /* 底部留白給按鈕面板 */
-        .list-header { display: flex; justify-content: space-between; font-size: 13px; color: #aaa; margin-bottom: 15px; width: 100%; }
-        
-        /* 個別 Code 項目 */
-        .code-item { background: var(--card-bg); padding: 15px; margin-bottom: 12px; border-radius: 15px; display: flex; align-items: center; border: 1px solid var(--glass-border); animation: slideIn 0.3s ease; }
-        @keyframes slideIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
-        
-        .code-text { font-family: 'Courier New', Courier, monospace; font-size: 18px; font-weight: bold; color: var(--accent-color); letter-spacing: 1px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        
-        .action-btns { display: flex; gap: 8px; }
-        .item-btn { padding: 6px 12px; font-size: 12px; border-radius: 8px; flex: none; font-weight: normal; }
-        
-        .copy-btn { background: var(--glass-bg); color: #fff; }
-        .copy-btn.copied { background: var(--accent-color); color: #000; }
-        .copy-btn:active { background: var(--glass-border); }
-
-        .delete-btn { background: rgba(207, 102, 121, 0.15); color: var(--danger-color); }
-        .delete-btn:active { background: rgba(207, 102, 121, 0.3); }
-        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         canvas { display: none; }
-        .loading { color: var(--accent-color); font-size: 14px; position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); font-style: italic; }
+        .loading { color: #666; font-style: italic; margin-bottom: 10px; }
+        .counter { font-size: 14px; color: #666; }
     </style>
 </head>
 <body>
 
-    <h2>Code 掃描助手 Pro</h2>
-    
-    <div id="camera-container">
-        <video id="video" autoplay playsinline></video>
-        <div id="overlay">
-            <div class="scrim"></div>
-            <div id="scan-region">
-                <div id="scan-line"></div>
-            </div>
-            <div class="scrim"></div>
-        </div>
-        <div id="loading-msg" class="loading" style="display:none;">辨識中...</div>
-    </div>
-    
+    <h2>Code 掃描助手</h2>
+    <video id="video" autoplay playsinline></video>
     <canvas id="canvas"></canvas>
 
+    <div class="controls">
+        <button id="scan-btn">📷 掃描畫面</button>
+        <button id="clear-btn">🗑️ 清空記錄</button>
+    </div>
+
+    <div id="loading-msg" class="loading" style="display:none;">正在辨識中...</div>
+
     <div class="list-header">
-        <span>已存儲 Code 列表</span>
-        <span class="counter"><strong id="count-num">0</strong> 組</span>
+        <span class="counter">已偵測到 <strong id="count-num">0</strong> 組不重複 Code</span>
     </div>
 
     <div id="result-list">
         </div>
 
-    <div class="controls-panel">
-        <button id="scan-btn">📷 掃描對焦框內 Code</button>
-        <button id="clear-all-btn" title="清空所有記錄">🗑️</button>
-    </div>
-
     <script>
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
-        const cameraContainer = document.getElementById('camera-container');
-        const scanRegion = document.getElementById('scan-region');
         const scanBtn = document.getElementById('scan-btn');
-        const clearAllBtn = document.getElementById('clear-all-btn');
+        const clearBtn = document.getElementById('clear-btn');
         const resultList = document.getElementById('result-list');
         const loadingMsg = document.getElementById('loading-msg');
         const countNum = document.getElementById('count-num');
 
-        // 使用 Set 來管理不重複的 Code
-        let scannedCodesSet = new Set();
+        // 使用 Set 來儲存已經掃描過的 Code，確保不重複
+        let scannedCodes = new Set();
 
         async function startCamera() {
             try {
-                // 優化相機參數，盡量請求高解析度
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } 
-                });
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
                 video.srcObject = stream;
             } catch (err) {
-                alert("無法啟動相機，請確保已授權使用。");
+                alert("無法啟動相機，請確保已授權網頁使用相機。");
             }
         }
 
         scanBtn.onclick = async () => {
-            // 啟用高亮掃描動畫
-            cameraContainer.classList.add('scanning');
             loadingMsg.style.display = 'block';
             scanBtn.disabled = true;
 
             const context = canvas.getContext('2d');
-            
-            // 1. 獲取相機原始解析度
-            const vw = video.videoWidth;
-            const vh = video.videoHeight;
-            const videoRatio = vw / vh;
-            
-            // 2. 獲取掃描框在網頁上的相對位置
-            const sr = scanRegion.getBoundingClientRect();
-            const container = cameraContainer.getBoundingClientRect();
-            
-            // 3. 計算掃描框在原始視頻畫面中的座標
-            // 我們假設 object-fit: cover
-            let sw, sh, sx, sy;
-            if (container.width / container.height > videoRatio) {
-                // 視頻寬度被裁切
-                sh = vh;
-                sw = sh * (container.width / container.height);
-                sy = 0;
-                sx = (vw - sw) / 2;
-            } else {
-                // 視頻高度被裁切
-                sw = vw;
-                sh = sw * (container.height / container.width);
-                sx = 0;
-                sy = (vh - sh) / 2;
-            }
-            
-            // 計算真正的裁剪比例
-            const scaleX = sw / container.width;
-            const scaleY = sh / container.height;
-            const captureX = sx + (sr.left - container.left) * scaleX;
-            const captureY = sy + (sr.top - container.top) * scaleY;
-            const captureW = sr.width * scaleX;
-            const captureH = sr.height * scaleY;
-
-            // 4. 只擷取對焦框內的畫面
-            canvas.width = captureW;
-            canvas.height = captureH;
-            context.drawImage(video, captureX, captureY, captureW, captureH, 0, 0, captureW, captureH);
-
-            // 可選：如果你想看裁剪後的樣子，可以用這句調試：
-            // console.log(canvas.toDataURL());
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
             try {
-                // 這裡辨識英文數字
+                // 這裡識別英文數字
                 const { data: { text } } = await Tesseract.recognize(canvas, 'eng');
                 
-                // 🔍 精準度設定：正則表達式尋找 12 到 18 位的大寫英數組合
-                // 你可以根據具體 Code 格式修改長度 {12,18}
-                const foundCodes = text.match(/[A-Z0-9-]{12,18}/g);
+                // 正則表達式：尋找 8 位以上的英數組合
+                const foundCodes = text.match(/[A-Z0-9-]{8,20}/g);
 
                 if (foundCodes) {
-                    foundCodes.forEach(code => addResult(code));
+                    let newAdded = 0;
+                    foundCodes.forEach(code => {
+                        // 檢查是否已經存在於 Set 中
+                        if (!scannedCodes.has(code)) {
+                            scannedCodes.add(code);
+                            addResultToUI(code);
+                            newAdded++;
+                        }
+                    });
+                    
+                    if(newAdded === 0) {
+                        alert("掃描到了，但這些 Code 之前都已經存過囉！");
+                    }
                 } else {
-                    alert("框框內未偵測到 Code，請將 Code 對齊綠色框。");
+                    alert("沒看清楚，請對準一點再試一次。");
                 }
             } catch (e) {
                 console.error(e);
             }
 
-            // 關閉掃描動畫
-            cameraContainer.classList.remove('scanning');
             loadingMsg.style.display = 'none';
             scanBtn.disabled = false;
+            updateCounter();
         };
 
-        // 清空所有記錄
-        clearAllBtn.onclick = () => {
-            if (scannedCodesSet.size > 0 && confirm("確定要清空所有記錄嗎？")) {
-                scannedCodesSet.clear();
+        // 清空按鈕功能
+        clearBtn.onclick = () => {
+            if (confirm("確定要刪除所有掃描記錄嗎？")) {
+                scannedCodes.clear();
                 resultList.innerHTML = '';
                 updateCounter();
             }
         };
 
-        function addResult(code) {
-            // 自動去重檢查
-            if (scannedCodesSet.has(code)) return;
-            scannedCodesSet.add(code);
-            
+        function addResultToUI(code) {
             const div = document.createElement('div');
             div.className = 'code-item';
-            div.id = `item-${code}`; // 給一個 ID 方便個別刪除
             div.innerHTML = `
-                <div class="code-text">${code}</div>
-                <div class="action-btns">
-                    <button class="item-btn copy-btn" onclick="copyIndividual('${code}')">複製</button>
-                    <button class="item-btn delete-btn" onclick="deleteIndividual('${code}')">🗑️</button>
-                </div>
+                <span><strong>${code}</strong></span>
+                <button class="copy-btn" onclick="copyToClipboard('${code}')">複製</button>
             `;
-            resultList.prepend(div); // 新增在最上方
-            updateCounter();
-        }
-
-        // 個別刪除
-        function deleteIndividual(code) {
-            if (scannedCodesSet.has(code)) {
-                scannedCodesSet.delete(code);
-                const item = document.getElementById(`item-${code}`);
-                if (item) item.remove();
-                updateCounter();
-            }
-        }
-
-        // 個別複製 (帶有視覺反饋)
-        function copyIndividual(code) {
-            navigator.clipboard.writeText(code).then(() => {
-                const item = document.getElementById(`item-${code}`);
-                const copyBtn = item.querySelector('.copy-btn');
-                
-                // 視覺回饋
-                copyBtn.innerText = '已複製';
-                copyBtn.classList.add('copied');
-                
-                setTimeout(() => {
-                    copyBtn.innerText = '複製';
-                    copyBtn.classList.remove('copied');
-                }, 1500);
-            });
+            resultList.prepend(div); // 新的排在最上面
         }
 
         function updateCounter() {
-            countNum.innerText = scannedCodesSet.size;
+            countNum.innerText = scannedCodes.size;
         }
+
+        window.copyToClipboard = (text) => {
+            navigator.clipboard.writeText(text).then(() => {
+                // 簡單的視覺回饋
+                alert('已複製：' + text);
+            });
+        };
 
         startCamera();
     </script>
